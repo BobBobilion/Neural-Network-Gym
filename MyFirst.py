@@ -42,3 +42,4 @@ class Agent:
         one_hot_actions = tf.one_hot(self.actions, num_actions)
 
         cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits=out, labels=one_hot_actions)
+#it didn't work

@@ -114,26 +114,26 @@ for generation in range(trainingGenerations):
         if generation % 100 == 0:
             env.render()
 
-            actionProbabilities = sess.run(agent.outputs, feed_dict={agent.inputLayer: [state]})
-            actionChoice = np.random.choice(range(numActions), p= actionProbabilities[0])
+        actionProbabilities = sess.run(agent.outputs, feed_dict={agent.inputLayer: [state]})
+        actionChoice = np.random.choice(range(numActions), p= actionProbabilities[0])
 
-            stateNext, reward, done, _ = env.step(actionChoice)
-            generationHistory.append([state,reward,actionChoice,stateNext])
-            state = stateNext
+        stateNext, reward, done, _ = env.step(actionChoice)
+        generationHistory.append([state,reward,actionChoice,stateNext])
+        state = stateNext
 
-            generationRewards += reward
+        generationRewards += reward
 
-            if done or steps + 1 >= maxStepsPerGeneration:
-                totalGenerationReward.append(reward)
-                generationHistory = np.array(generationHistory)
+        if done or steps + 1 >= maxStepsPerGeneration:
+            totalGenerationReward.append(reward)
+            generationHistory = np.array(generationHistory)
 
-                generationHistory[:,2] = discountAndNormalizeRewards(generationHistory[:,2])
+            generationHistory[:,2] = discountAndNormalizeRewards(generationHistory[:,2])
 
-                genGradients = sess.run(agent.gradients, feed_dict={agent.inputLayer: np.vstack(generationHistory[:,0]),
-                                                                    agent.actions: generationHistory[:,1],
-                                                                    agent.rewards: generationHistory[:,2]})
+            genGradients = sess.run(agent.gradients, feed_dict={agent.inputLayer: np.vstack(generationHistory[:,0]),
+                                                                agent.actions: generationHistory[:,1],
+                                                                agent.rewards: generationHistory[:,2]})
 
-                for index, gradient in enumerate(genGradients):
-                    gradientBuffer[index] += gradient
+            for index, gradient in enumerate(genGradients):
+                gradientBuffer[index] += gradient
 
-                break
+            break

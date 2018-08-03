@@ -3,9 +3,13 @@ import numpy as np
 import os
 import gym
 
+
+AllRewards = []
+
+
 env = gym.make("CartPole-v1")
 
-NumGames = 1
+NumGames = 0
 
 for i in range(NumGames):
     obs = env.reset()
@@ -50,7 +54,7 @@ class Brain:# the AI
 
         self.gradientsToApply = []
 
-        for _,_ in  enumerate(tf.trainable_variables()):
+        for index,variable in enumerate(tf.trainable_variables()):
             self.gradientsToApply.append(tf.placeholder(dtype=tf.float32))#add a placeholder
 
             optimizer = tf.train.AdamOptimizer(learning_rate=1e-2)
@@ -58,30 +62,33 @@ class Brain:# the AI
 
 
 
-discountRate = 0.92
+discountRate = 0.95
 
 def discountAndNormalizeRewards(rewards):
-    discountRewards = np.zero_like(rewards)
+    discountRewards = np.zeros_like(rewards)
     totalRewards = 0
 
     for i in reversed(range(len(rewards))):
-        totalRewards = totalRewards+discountRate + rewards[i]
+        totalRewards = totalRewards * discountRate + rewards[i]
         discountRewards[i] = totalRewards
 
-        discountRewards -= np.mean(discountRewards)
-        discountRewards /= np.std(discountRewards)
+    discountRewards -= np.mean(discountRewards)
+    discountRewards /= np.std(discountRewards)
 
-        return discountRewards
+    return discountRewards
 
 
 #train loop
+tf.reset_default_graph()
+#env = gym.make("CartPole-v1")
+
 numActions = 2
 inputSize = 4
 
 path = "./cartpole-pg/"
-trainingGenerations = 1000
+trainingGenerations = 20000 #max # of generations
 maxStepsPerGeneration = 10000
-batchSizePerGeneration = 5
+batchSizePerGeneration = 500
 
 agent = Brain(numActions,inputSize) #####    MEET BOB, THE AI
 init = tf.global_variables_initializer()
@@ -98,42 +105,54 @@ with tf.Session() as sess:
 
     gradientBuffer = sess.run(tf.trainable_variables())
 
-for index,gradient in enumerate(gradientBuffer):
-    gradientBuffer[index] *= 0
+    for index,gradient in enumerate(gradientBuffer):
+        gradientBuffer[index] = gradient * 0
 
-generationCounter = 0
+    generationCounter = 0
 
-for generation in range(trainingGenerations):
-    state = env.reset()
+    for generation in range(trainingGenerations):
+        state = env.reset()
 
-    generationHistory = []
-    generationRewards = 0
+        generationHistory = []
+        generationRewards = 0
+        for steps in range(maxStepsPerGeneration):
 
-    for steps in range(maxStepsPerGeneration):
-        print(generation)
-        if generation % 100 == 0:
-            env.render()
+            if generation % 100 == 0:
+                env.render()
 
-        actionProbabilities = sess.run(agent.outputs, feed_dict={agent.inputLayer: [state]})
-        actionChoice = np.random.choice(range(numActions), p= actionProbabilities[0])
+            actionProbabilities = sess.run(agent.outputs, feed_dict={agent.inputLayer: [state]})
+            actionChoice = np.random.choice(range(numActions), p= actionProbabilities[0])
 
-        stateNext, reward, done, _ = env.step(actionChoice)
-        generationHistory.append([state,reward,actionChoice,stateNext])
-        state = stateNext
+            stateNext, reward, done, _ = env.step(actionChoice)
+            generationHistory.append([state,actionChoice,reward,stateNext])
+            state = stateNext
 
-        generationRewards += reward
+            generationRewards += reward
 
-        if done or steps + 1 >= maxStepsPerGeneration:
-            totalGenerationReward.append(reward)
-            generationHistory = np.array(generationHistory)
+            if done or steps + 1 == maxStepsPerGeneration:
+                totalGenerationReward.append(generationRewards)
+                generationHistory = np.array(generationHistory)
 
-            generationHistory[:,2] = discountAndNormalizeRewards(generationHistory[:,2])
+                generationHistory[:,2] = discountAndNormalizeRewards(generationHistory[:, 2])
 
-            genGradients = sess.run(agent.gradients, feed_dict={agent.inputLayer: np.vstack(generationHistory[:,0]),
-                                                                agent.actions: generationHistory[:,1],
-                                                                agent.rewards: generationHistory[:,2]})
+                genGradients = sess.run(agent.gradients, feed_dict={agent.inputLayer: np.vstack(generationHistory[:, 0]),
+                                                                    agent.actions: generationHistory[:, 1],
+                                                                    agent.rewards: generationHistory[:, 2]})
 
-            for index, gradient in enumerate(genGradients):
-                gradientBuffer[index] += gradient
+                for index, gradient in enumerate(genGradients):
+                    gradientBuffer[index] += gradient
+                print("Average reward / 100 eps: " + str(np.mean(totalGenerationReward[-100:])))
+                AllRewards.append(np.mean(totalGenerationReward[-100:]))
 
-            break
+
+                break
+
+            if generation % batchSizePerGeneration == 0:
+                feedDictGradients = dict(zip(agent.gradientsToApply, gradientBuffer))
+
+                sess.run(agent.updateGradients, feed_dict=feedDictGradients)
+
+                for index, gradient in enumerate(gradientBuffer):
+                    gradientBuffer[index] = gradient * 0
+                if generation % 100 == 0:
+                    saver.save(sess, path + "pg-checkpoint",generation)
